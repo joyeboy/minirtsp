@@ -95,7 +95,7 @@ enum{
 };
 
 
-static RStatusCode_t rtspStatusCodes[]=
+static RStatusCode_t rtspRStatusCodes[]=
 {
 	{100,"Continue"},					////-0
 	{200,"OK"},
@@ -144,7 +144,7 @@ static RStatusCode_t rtspStatusCodes[]=
 };
 
 
-static const char *rtspMethods[RTSP_METHOD_CNT]=
+static const char * const rtspMethods[RTSP_METHOD_CNT]=
 {
 	"DESCRIBE",
 	"ANNOUNCE",
@@ -159,6 +159,50 @@ static const char *rtspMethods[RTSP_METHOD_CNT]=
 	"TEARDOWN",
 	""
 };
+static const char *rtspAllowMethods[]="SETUP,OPTIONS,PLAY,SETUP,TEARDOWN";
+
+static inline int http_get_number(const char *src,
+	const char *key,int *ret)
+{
+	char *tmp=strstr(src,key);
+	if(tmp == NULL){
+		*ret=-1;
+		return -1;
+	}else{
+		tmp+=strlen(key);
+		tmp++;
+		sscanf(tmp,"%d",ret);
+		return 0;
+	}
+}
+static inline int http_get_string(const char *src,
+	const char *key,char *ret)
+{
+	char *tmp=strstr(src,key);
+	if(tmp == NULL){
+		*ret=0;
+		return -1;
+	}else{
+		tmp+=strlen(key);
+		tmp++;
+		sscanf(tmp,"%s%[^\r\n]",ret);
+		return 0;
+	}
+}
+static inline int http_get_url(const char *src,char *ret)
+{
+	if(sscanf(src,"%*s %s %*s",ret)==1){
+		return 0;
+	}else{
+		return -1;
+	}
+}
+
+
+static int rtsp_send_packet(Rtsp_t *r)
+{
+	
+}
 
 
 static int rtsp_handle_describe(Rtsp_t *r)
@@ -178,8 +222,21 @@ static int rtsp_handle_get_parameter(Rtsp_t *r)
 }
 static int rtsp_handle_options(Rtsp_t *r)
 {
-	RTSP_DEBUG("not yet");
-	return RTSP_RET_OK;
+	int ret;
+	const char *format=
+		"%s %d %s\r\n"\
+		"CSeq: %d\r\n"\
+		"Public: %s\r\n"
+		"\r\n";
+	sprintf(r->payload,format,RTSP_VERSION,
+		rtspRStatusCodes[RTSP_RSC_OK].code,
+		rtspRStatusCodes[RTSP_RSC_OK].info,
+		r->cseq,
+		rtspAllowMethods);
+	r->payload_size = strlen(r->payload);
+	
+	ret=rtsp_send_packet(r);
+	return ret;
 }
 static int rtsp_handle_play(Rtsp_t *r)
 {
@@ -203,8 +260,21 @@ static int rtsp_handle_redirect(Rtsp_t *r)
 }
 static int rtsp_handle_setup(Rtsp_t *r)
 {
-	RTSP_DEBUG("not yet");
-	return RTSP_RET_OK;
+	int ret;
+	const char *format=
+		"%s %d %s\r\n"\
+		"CSeq: %d\r\n"\
+		"Transport: %s;%s\r\n"\
+		"\r\n";
+	sprintf(r->payload,format,RTSP_VERSION,
+		rtspRStatusCodes[RTSP_RSC_OK].code,
+		rtspRStatusCodes[RTSP_RSC_OK].info,
+		r->cseq,
+		rtspAllowMethods);
+	r->payload_size = strlen(r->payload);
+	
+	ret=rtsp_send_packet(r);
+	return ret;
 }
 static int rtsp_handle_set_parameter(Rtsp_t *r)
 {
@@ -216,7 +286,24 @@ static int rtsp_handle_teardown(Rtsp_t *r)
 	RTSP_DEBUG("not yet");
 	return RTSP_RET_OK;
 }
-
+static int rtsp_handle_notallowed_method(Rtsp_t *r)
+{
+	int ret;
+	const char *format=
+		"%s %d %s\r\n"\
+		"CSeq: %d\r\n"\
+		"Allow: %s\r\n"
+		"\r\n";
+	sprintf(r->payload,format,RTSP_VERSION,
+		rtspRStatusCodes[RTSP_RSC_METHOD_NOT_ALLOWED].code,
+		rtspRStatusCodes[RTSP_RSC_METHOD_NOT_ALLOWED].info,
+		r->cseq,
+		rtspAllowMethods);
+	r->payload_size = strlen(r->payload);
+	
+	ret=rtsp_send_packet(r);
+	return ret;
+}
 
 int RTSP_request_options(Rtsp_t *r,const char *sMethodList[])
 {
@@ -283,7 +370,7 @@ int RTSP_read_message(Rtsp_t *r)
 }
 int RTSP_parse_message(Rtsp_t *r)
 {
-	int i;
+	int i,ret;
 	for(i=0;i<RTSP_METHOD_CNT;i++){
 		if(memcmp(r->payload,rtspMethods[i],strlen(rtspMethods[i])) == 0){
 			break;
@@ -293,7 +380,11 @@ int RTSP_parse_message(Rtsp_t *r)
 		RTSP_ERR("unknow method");
 		return RTSP_RET_FAIL;
 	}
-	RTSP_DEBUG("rtsp request <<%s>>",rtspMethods[i]);
+	if(http_get_number(r->payload,"CSeq:",&r->cseq)==-1){
+		RTSP_ERR("invaild request format,not found cseq");
+		return RTSP_RET_FAIL;
+	}
+	RTSP_DEBUG("rtsp request <<%s>> cseq:%d",rtspMethods[i],r->cseq);
 	switch(i){
 		case RTSP_METHOD_DESCRIBE:
 			rtsp_handle_describe(r);
@@ -329,7 +420,7 @@ int RTSP_parse_message(Rtsp_t *r)
 			rtsp_handle_teardown(r);
 			break;
 		default:
-			rtsp_handle_not
+			rtsp_handle_notallowed_method(r);
 			break;
 	}
 	ret RTSP_RET_OK;

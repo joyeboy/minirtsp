@@ -14,7 +14,10 @@ extern "C" {
 /****************************************************************
 * configure mirco
 ****************************************************************/
-#define RTSP_BUF_SIZE		(1024*16)
+#define RTSP_BUF_SIZE			(1024*16)
+#define RTSP_CLIENT_PORT_BEGIN	(5200)
+#define RTSP_SERVER_PORT_BEGIN	(7200)
+#define RTSP_CHANNEL_BEGIN		(0)
 
 #define RTSP_DEFAULT_PORT	(554)
 #define RTSP_VERSION		"RTSP/1.0"
@@ -24,7 +27,9 @@ extern "C" {
 
 #define RTSP_UNICAST		(0)
 #define	RTSP_MULTICAST		(1)
-#define RTSP_BROADCASET		(2)
+
+#define RTSP_MODE_PLAY		(0)
+#define RTSP_MODE_RECORD	(1)
 
 typedef enum{
 	RTSP_STATE_INIT,
@@ -64,6 +69,10 @@ typedef struct _Rtsp
 	
 	RtspState_t state;
 	uint32_t session_id;
+	bool b_interleavedMode;
+	uint16_t client_port;
+	uint16_t server_port;
+	int channel;
 
 	int cseq;
 	int payload_size;
