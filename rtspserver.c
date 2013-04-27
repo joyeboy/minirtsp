@@ -19,7 +19,7 @@ static int rtsp_user_num=0;
 static void signal_handle(int sign_no) 
 {
     toggle=false;
-    RTSP_DEBUG("rtmp server kill!");
+    RTSP_DEBUG("rtsp server kill!");
     close(server_fd);
     sleep(2);
     exit(0);
@@ -27,6 +27,39 @@ static void signal_handle(int sign_no)
 
 void* rtsp_server_process(void *para) 
 {
+	int ret;
+	int *sock=(int *)para;
+	Rtsp_t r;
+	fd_set read_set;
+	fd_set write_set;
+	struct timeval timeout={0,10*1000};
+	
+    pthread_detach(pthread_self());
+    RTSP_init(&r, *sock);
+
+	while(1){
+		FD_ZERO(&read_set);
+		FD_SET(r.sock,&read_set);
+		ret=select(r.sock+1,&read_set,NULL,NULL,&timeout);
+		if(ret < 0){
+			RTSP_ERR("select failed");
+			break;
+		}else if(ret == 0){
+			//
+		}else{
+			if(FD_ISSET(r.sock,&read_set)){
+				if(RTSP_read_message(&r)==RTSP_RET_FAIL){
+					break;
+				}
+				if(RTSP_parse_message(&r) == RTSP_RET_FAIL){
+					break;
+				}
+			}
+		}
+	}
+
+	RTSP_destroy(&r);
+	
 	return NULL;
 }
 

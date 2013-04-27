@@ -57,6 +57,7 @@ int RTSP_STREAM_destroy(RtspStream_t *s)
 	if(s->data) free(s->data);
 	FlvStream *src = (FlvStream *)s->param;
     FlvStream_free(src);
+	return RTSP_RET_OK;
 }
 
 int RTSP_STREAM_reset(RtspStream_t *s) 

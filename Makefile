@@ -21,6 +21,7 @@ SRC += timerange.c
 SRC += rtsplib.c
 SRC += rtplib.c
 SRC += rtcplib.c
+SRC += sdplib.c
 SRC += rtspserver.c
 #SRC += rtspclient.c
 
@@ -28,8 +29,8 @@ OBJ := $(patsubst %.c,$(OBJ_DIR)/%.o,$(SRC))
 DEP := $(patsubst %.c,$(OBJ_DIR)/%.d,$(SRC))
 
 INC := -I.
-CFLAGS := -g3 -O0 -Wall -DFALSE=0 -DTRUE=1 -DLINUX=2 $(INC)
-LDFLAGS := -L. -lm -lpthread
+CFLAGS := -g3 -O0 -Wall -DNOCROSS -DFALSE=0 -DTRUE=1 -DLINUX=2 $(INC)
+LDFLAGS := -L. -lm -lpthread -lflv
 
 .PHONY: clean all
 

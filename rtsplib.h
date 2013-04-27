@@ -7,6 +7,7 @@ extern "C" {
 
 #include "rtsplog.h"
 #include "authentication.h"
+#include "sdplib.h"
 #include "rtplib.h"
 #include "rtcplib.h"
 #include "netstream.h"
@@ -40,7 +41,7 @@ typedef enum{
 }RtspState_t;
 
 typedef enum{
-	RTSP_METHOD_DESCRIBE,
+	RTSP_METHOD_DESCRIBE = 0,
 	RTSP_METHOD_ANNOUNCE,
 	RTSP_METHOD_GET_PARAMETER,
 	RTSP_METHOD_OPTIONS,
@@ -48,7 +49,7 @@ typedef enum{
 	RTSP_METHOD_PLAY,
 	RTSP_METHOD_RECORD,
 	RTSP_METHOD_REDIRECT,
-	RTSP_METHOD_SETUP,
+	RTSP_METHOD_SETUP,	//8	
 	RTSP_METHOD_SET_PARAMETER,
 	RTSP_METHOD_TEARDOWN,
 	RTSP_METHOD_CNT
@@ -61,32 +62,44 @@ typedef struct _RtspPacket
 	char *body;
 }RtspPacket_t;
 
+typedef struct _RtspTransport
+{
+	
+}RtspTransport_t;
 
 typedef struct _Rtsp
 {
 	int sock;
 	int trigger;
+	//uri
+	char ip_me[20];
+	int port;
+	char stream[32];
+	
+	//transport
+	bool b_interleavedMode;
+	bool low_transport;	// udp or tcp
+	int client_port;
+	int server_port;
+	int channel;
+	int cast_type;//unicast or multicast
+	int work_mode;//record or play
 	
 	RtspState_t state;
 	uint32_t session_id;
-	bool b_interleavedMode;
-	uint16_t client_port;
-	uint16_t server_port;
-	int channel;
 
 	int cseq;
 	int payload_size;
 	char payload[RTSP_BUF_SIZE];
 
-	int transport;// udp or tcp
-	int cast_type;// unicast or multicast or broadcast
-
 	Authentication_t auth;
 	RtspStream_t s;
+
+	SessionDesc_t *sdp;
 }Rtsp_t;
 
 // global interface for rtsp client and rtsp server
-extern int RTSP_init(Rtsp_t *r);
+extern int RTSP_init(Rtsp_t *r,int sock);
 extern int RTSP_destroy(Rtsp_t *r);
 
 //extern int RTSP_add_stream(Rtsp_t *r,const char *stream_name);
@@ -107,7 +120,8 @@ extern int RTSP_request_redirect(Rtsp_t *r);
 extern int RTSP_request_setup(Rtsp_t *r);
 extern int RTSP_request_teardown(Rtsp_t *r);
 
-
+#ifdef __cplusplus
+}
 #endif
 #endif
 

@@ -15,7 +15,11 @@
     	Author      : kaga
  	Modification: Created file	
 ******************************************************************************/
-
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+#include <sys/socket.h>
 #include "rtsplib.h"
 
 
@@ -149,7 +153,7 @@ static const char * const rtspMethods[RTSP_METHOD_CNT]=
 	"DESCRIBE",
 	"ANNOUNCE",
 	"GET PARAMETER",
-	"OPTIONS"
+	"OPTIONS",
 	"PAUSE",
 	"PLAY",
 	"RECORD",
@@ -159,7 +163,7 @@ static const char * const rtspMethods[RTSP_METHOD_CNT]=
 	"TEARDOWN",
 	""
 };
-static const char *rtspAllowMethods[]="SETUP,OPTIONS,PLAY,SETUP,TEARDOWN";
+static const char *rtspAllowMethods="SETUP,OPTIONS,DESCRIBE,PLAY,TEARDOWN";
 
 static inline int http_get_number(const char *src,
 	const char *key,int *ret)
@@ -185,30 +189,154 @@ static inline int http_get_string(const char *src,
 	}else{
 		tmp+=strlen(key);
 		tmp++;
-		sscanf(tmp,"%s%[^\r\n]",ret);
+		sscanf(tmp,"%[^\r\n]",ret);
 		return 0;
 	}
 }
-static inline int http_get_url(const char *src,char *ret)
+static inline int http_get_url(const char *src,char *ip,int *port,char *stream)
 {
-	if(sscanf(src,"%*s %s %*s",ret)==1){
+	char tmp[128];
+	char *p=NULL;
+	if(sscanf(src,"%*s %s %*s",tmp)==1){
+		
+		if(strncmp(tmp,"rtsp://",strlen("rtsp://")) != 0){
+			RTSP_ERR("request url format wrong");
+			return -1;
+		}
+		if((p = strstr(tmp+strlen("rtsp://"),":")) ==NULL){
+			*port = RTSP_DEFAULT_PORT;
+			sscanf(tmp,"rtsp://%[^/]%s",ip,stream);
+		}else{
+			sscanf(tmp,"rtsp://%[^:]:%d%s",ip,port,stream);
+		}
+		RTSP_DEBUG("ip:%s stream:%s port:%d",ip,stream,*port);
 		return 0;
 	}else{
 		return -1;
 	}
 }
 
+static int rtsp_check_setup_url(Rtsp_t *r)
+{
+	RTSP_DEBUG("setup steam:%s",r->stream);
+	return RTSP_RET_OK;
+}
+static int rtsp_parse_transport(Rtsp_t *r,char *buf)
+{
+	char *p,*q;
+	char transport[128];
+	p=transport;
+	*buf=0;
+	if(http_get_string(r->payload,"Transport:",transport) == RTSP_RET_FAIL){
+		return RTSP_RET_FAIL;
+	}
+	if((q=strstr(transport,"RTP/AVP/TCP")) != NULL){
+		r->low_transport = RTSP_TRANSPORT_TCP;
+		strcat(buf,"RTP/AVP/TCP;");
+	}else{
+		strcat(buf,"RTP/AVP;");
+		r->low_transport = RTSP_TRANSPORT_UDP;
+	}
+	if((q=strstr(p,"multicast"))!=NULL){
+		r->cast_type = RTSP_MULTICAST;
+		strcat(buf,"multicast;");
+	}else{
+		r->cast_type = RTSP_UNICAST;
+		strcat(buf,"unicast;");
+	}
+	if((q=strstr(p,"interleaved"))!=NULL){
+		r->b_interleavedMode = true;
+		q+=strlen("interleaved=");
+		sscanf(q,"%d%*s",&r->channel);
+		q=buf+strlen(buf);
+		sprintf(q,"interleaved=%d-%d;",r->channel,r->channel + 1);
+	}else{
+		if((q=strstr(p,"client_port"))!=NULL){
+			q+=strlen("client_port=");
+			sscanf(q,"%d%*s",&r->client_port);
+		}
+		if((q=strstr(p,"multicast"))!=NULL){
+			q+=strlen("server_port");
+			sscanf(q,"%d%*s",&r->server_port);
+		}
+		q=buf+strlen(buf);
+		sprintf(q,"client_port=%d-%d;server_port=%d-%d;",
+			r->client_port,r->client_port+ 1,r->server_port,r->server_port+1);
+	}
+	if((q=strstr(p,"mode"))!=NULL){
+		q+=strlen("mode=\"");
+		if(strcmp(q,"PLAY") == 0){
+			r->work_mode =RTSP_MODE_PLAY;
+			strcat(buf,"mode=\"PLAY\"");
+		}else if(strcmp(q,"RECORD") == 0){
+			r->work_mode = RTSP_MODE_RECORD;
+			strcat(buf,"mode=\"RECORD\"");
+		}
+	}
+	//ssrc
+	// ttl
+	//....
+	RTSP_DEBUG("Transport: %s",buf);
+	return RTSP_RET_OK;
+}
+
+static void rtsp_gmt_time_string(char *ret)
+{
+	const char * const szMonth[12]={"Jan","Feb","Mar","Apr","May","Jun","Jul",
+		"Aug","Sep","Oct","Nov","Dec"};
+	time_t t;
+	struct tm *ptm;
+	time(&t);
+	ptm=gmtime(&t);
+	sprintf(ret,"%2d %s %04d %02d:%02d:%02d GMT",ptm->tm_mday,szMonth[ptm->tm_mon],
+		ptm->tm_year+1900,ptm->tm_hour,ptm->tm_min,ptm->tm_mday);
+}
 
 static int rtsp_send_packet(Rtsp_t *r)
 {
-	
+	int ret=send(r->sock,r->payload,r->payload_size,0);
+	if(ret != r->payload_size){
+		return RTSP_RET_FAIL;
+	}
+	return RTSP_RET_OK;
 }
 
 
 static int rtsp_handle_describe(Rtsp_t *r)
 {
-	RTSP_DEBUG("not yet");
-	return RTSP_RET_OK;
+	int ret;
+	char tmp[128];
+	const char *format=
+		"%s %d %s\r\n"\
+		"CSeq: %d\r\n"\
+		"Content-Type: %s\r\n"\
+		"Content-Length: %d\r\n"\
+		"\r\n"\
+		"%s";
+	if(http_get_string(r->payload,"Accept:",tmp)==RTSP_RET_FAIL){
+		return RTSP_RET_FAIL;
+	}
+	if(strstr(tmp,SDP_MEDIA_TYPE) == NULL){
+		RTSP_ERR("unsupport Accept type:%s",tmp);
+		// send error ack here...
+		return RTSP_RET_FAIL;
+	}
+	if((r->sdp=SDP_new_default(r->stream,r->ip_me))==NULL){
+		return RTSP_RET_FAIL;
+	}
+	SDP_add_h264(r->sdp,SDP_DEFAULT_VIDEO_CONTROL);
+	SDP_setup(r->sdp);
+	sprintf(r->payload,format,RTSP_VERSION,
+		rtspRStatusCodes[RTSP_RSC_OK].code,
+		rtspRStatusCodes[RTSP_RSC_OK].info,
+		r->cseq,SDP_MEDIA_TYPE,
+		strlen(r->sdp->buffer),
+		r->sdp->buffer);
+	r->payload_size=strlen(r->payload);
+	RTSP_DEBUG("ack (size:%d):\r\n%s\r\n",r->payload_size,r->payload);
+	
+	ret=rtsp_send_packet(r);
+	return ret;
 }
 static int rtsp_handle_announce(Rtsp_t *r)
 {
@@ -234,14 +362,31 @@ static int rtsp_handle_options(Rtsp_t *r)
 		r->cseq,
 		rtspAllowMethods);
 	r->payload_size = strlen(r->payload);
+	RTSP_DEBUG("ack (size:%d):\r\n%s\r\n",r->payload_size,r->payload);
 	
 	ret=rtsp_send_packet(r);
 	return ret;
 }
 static int rtsp_handle_play(Rtsp_t *r)
 {
-	RTSP_DEBUG("not yet");
-	return RTSP_RET_OK;
+	int ret;
+	char tmp[128];
+	const char *format=
+		"%s %d %s\r\n"\
+		"CSeq: %d\r\n"\
+		"Date: %s\r\n"
+		"\r\n";
+	rtsp_gmt_time_string(tmp);
+	sprintf(r->payload,format,RTSP_VERSION,
+		rtspRStatusCodes[RTSP_RSC_OK].code,
+		rtspRStatusCodes[RTSP_RSC_OK].info,
+		r->cseq,
+		tmp);
+	r->payload_size = strlen(r->payload);
+	RTSP_DEBUG("ack (size:%d):\r\n%s\r\n",r->payload_size,r->payload);
+	
+	ret=rtsp_send_packet(r);
+	return ret;
 }
 static int rtsp_handle_pause(Rtsp_t *r)
 {
@@ -261,21 +406,36 @@ static int rtsp_handle_redirect(Rtsp_t *r)
 static int rtsp_handle_setup(Rtsp_t *r)
 {
 	int ret;
+	char tmp[128];
 	const char *format=
 		"%s %d %s\r\n"\
 		"CSeq: %d\r\n"\
-		"Transport: %s;%s\r\n"\
+		"Session: %ld\r\n"\
+		"Transport: %s\r\n"\
 		"\r\n";
+	if(rtsp_check_setup_url(r) == RTSP_RET_FAIL){
+		RTSP_ERR("session not found");
+		// send err ack here
+		return RTSP_RET_FAIL;
+	}
+	if(rtsp_parse_transport(r,tmp)== RTSP_RET_FAIL){
+		// send error ack here...
+		return RTSP_RET_FAIL;
+	}
+	
 	sprintf(r->payload,format,RTSP_VERSION,
 		rtspRStatusCodes[RTSP_RSC_OK].code,
 		rtspRStatusCodes[RTSP_RSC_OK].info,
 		r->cseq,
-		rtspAllowMethods);
+		r->sdp->originer.session_id,
+		tmp);
 	r->payload_size = strlen(r->payload);
+	RTSP_DEBUG("ack (size:%d):\r\n%s\r\n",r->payload_size,r->payload);
 	
 	ret=rtsp_send_packet(r);
 	return ret;
 }
+
 static int rtsp_handle_set_parameter(Rtsp_t *r)
 {
 	RTSP_DEBUG("not yet");
@@ -283,8 +443,20 @@ static int rtsp_handle_set_parameter(Rtsp_t *r)
 }
 static int rtsp_handle_teardown(Rtsp_t *r)
 {
-	RTSP_DEBUG("not yet");
-	return RTSP_RET_OK;
+	int ret;
+	const char *format=
+		"%s %d %s\r\n"\
+		"CSeq: %d\r\n"\
+		"\r\n";
+	sprintf(r->payload,format,RTSP_VERSION,
+		rtspRStatusCodes[RTSP_RSC_OK].code,
+		rtspRStatusCodes[RTSP_RSC_OK].info,
+		r->cseq);
+	r->payload_size = strlen(r->payload);
+	RTSP_DEBUG("ack (size:%d):\r\n%s\r\n",r->payload_size,r->payload);
+	
+	ret=rtsp_send_packet(r);
+	return ret;
 }
 static int rtsp_handle_notallowed_method(Rtsp_t *r)
 {
@@ -307,44 +479,63 @@ static int rtsp_handle_notallowed_method(Rtsp_t *r)
 
 int RTSP_request_options(Rtsp_t *r,const char *sMethodList[])
 {
+	return RTSP_RET_OK;
 }
 int RTSP_request_describe(Rtsp_t *r)
 {
+	return RTSP_RET_OK;
 }
 int RTSP_request_annouce(Rtsp_t *r)
 {
+	return RTSP_RET_OK;
 }
 int RTSP_request_get_parameter(Rtsp_t *r)
 {
+	return RTSP_RET_OK;
 }
 int RTSP_request_set_parameter(Rtsp_t *r)
 {
+	return RTSP_RET_OK;
 }
 int RTSP_request_play(Rtsp_t *r)
 {
+	return RTSP_RET_OK;
 }
 int RTSP_request_pause(Rtsp_t *r)
 {
+	return RTSP_RET_OK;
 }
 int RTSP_request_record(Rtsp_t *r)
 {
+	return RTSP_RET_OK;
 }
 int RTSP_request_redirect(Rtsp_t *r)
 {
+	return RTSP_RET_OK;
 }
 int RTSP_request_setup(Rtsp_t *r)
 {
+	return RTSP_RET_OK;
 }
 int RTSP_request_teardown(Rtsp_t *r)
 {
+	return RTSP_RET_OK;
 }
 
 
 int RTSP_init(Rtsp_t *r,int fd)
 {
+	memset(r,0,sizeof(Rtsp_t));
 	r->sock = fd;
 	r->state = RTSP_STATE_INIT;
 	r->cseq = 0;
+	r->b_interleavedMode = false;
+	r->client_port = RTSP_CLIENT_PORT_BEGIN;
+	r->server_port = RTSP_SERVER_PORT_BEGIN;
+	r->channel = RTSP_CHANNEL_BEGIN;
+	r->cast_type = RTSP_UNICAST;
+	r->work_mode = RTSP_MODE_PLAY;
+	r->low_transport = RTSP_TRANSPORT_UDP;
 	RTSP_SOCK_init(fd);
 	
 	return true;
@@ -355,6 +546,9 @@ int RTSP_destroy(Rtsp_t *r)
 	r->sock = -1;
 	r->state = RTSP_STATE_INIT;
 	r->cseq = 0;
+	if(r->sdp){
+		SDP_cleanup(r->sdp);
+	}
 	return true;
 }
 
@@ -380,49 +574,55 @@ int RTSP_parse_message(Rtsp_t *r)
 		RTSP_ERR("unknow method");
 		return RTSP_RET_FAIL;
 	}
+	if(http_get_url(r->payload,r->ip_me,&r->port,r->stream)==RTSP_RET_FAIL){
+		return RTSP_RET_FAIL;
+	}
 	if(http_get_number(r->payload,"CSeq:",&r->cseq)==-1){
 		RTSP_ERR("invaild request format,not found cseq");
 		return RTSP_RET_FAIL;
 	}
-	RTSP_DEBUG("rtsp request <<%s>> cseq:%d",rtspMethods[i],r->cseq);
+	RTSP_DEBUG("rtsp request %d <<%s>> cseq:%d",i,rtspMethods[i],r->cseq);
 	switch(i){
 		case RTSP_METHOD_DESCRIBE:
 			rtsp_handle_describe(r);
 			break;
-		case RTSP_METHOD_ANNOUNCE:
-			rtsp_handle_announce(r);
-			break;
-		case RTSP_METHOD_GET_PARAMETER:
-			rtsp_handle_get_parameter(r);
-			break;
+		//case RTSP_METHOD_ANNOUNCE:
+		//	rtsp_handle_announce(r);
+		//	break;
+		//case RTSP_METHOD_GET_PARAMETER:
+		//	rtsp_handle_get_parameter(r);
+		//	break;
 		case RTSP_METHOD_OPTIONS:
 			rtsp_handle_options(r);
 			break;
-		case RTSP_METHOD_PAUSE:
-			rtsp_handle_pause(r);
-			break;
+		//case RTSP_METHOD_PAUSE:
+		//	rtsp_handle_pause(r);
+		//	break;
 		case RTSP_METHOD_PLAY:
 			rtsp_handle_play(r);
+			r->state = RTSP_STATE_PLAYING;
 			break;
-		case RTSP_METHOD_RECORD:
-			rtsp_handle_record(r);
-			break;
-		case RTSP_METHOD_REDIRECT:
-			rtsp_handle_redirect(r);
-			break;
+		//case RTSP_METHOD_RECORD:
+		//	rtsp_handle_record(r);
+		//	break;
+		//case RTSP_METHOD_REDIRECT:
+		//	rtsp_handle_redirect(r);
+		//	break;
 		case RTSP_METHOD_SETUP:
 			rtsp_handle_setup(r);
+			r->state = RTSP_STATE_READY;
 			break;
-		case RTSP_METHOD_SET_PARAMETER:
-			rtsp_handle_set_parameter(r);
-			break;
+		//case RTSP_METHOD_SET_PARAMETER:
+		//	rtsp_handle_set_parameter(r);
+		//	break;
 		case RTSP_METHOD_TEARDOWN:
 			rtsp_handle_teardown(r);
+			r->state = RTSP_STATE_INIT;
 			break;
 		default:
 			rtsp_handle_notallowed_method(r);
 			break;
 	}
-	ret RTSP_RET_OK;
+	return RTSP_RET_OK;
 }
 
