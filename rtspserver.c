@@ -55,6 +55,9 @@ void* rtsp_server_process(void *para)
 					break;
 				}
 			}
+			if(r.state == RTSP_STATE_PLAYING){
+				
+			}
 		}
 	}
 
