@@ -20,6 +20,9 @@
 #include <string.h>
 #include <time.h>
 #include <sys/socket.h>
+#include <arpa/inet.h>
+//#include <netinet/tcp.h>
+//#include <netinet/in.h>
 #include "rtsplib.h"
 
 
@@ -148,7 +151,7 @@ static RStatusCode_t rtspRStatusCodes[]=
 };
 
 
-static const char * const rtspMethods[RTSP_METHOD_CNT]=
+static const char (*rtspMethods[16])[RTSP_METHOD_CNT]=
 {
 	"DESCRIBE",
 	"ANNOUNCE",
@@ -427,7 +430,7 @@ static int rtsp_handle_setup(Rtsp_t *r)
 		rtspRStatusCodes[RTSP_RSC_OK].code,
 		rtspRStatusCodes[RTSP_RSC_OK].info,
 		r->cseq,
-		r->sdp->originer.session_id,
+		r->session_id,
 		tmp);
 	r->payload_size = strlen(r->payload);
 	RTSP_DEBUG("ack (size:%d):\r\n%s\r\n",r->payload_size,r->payload);
@@ -536,6 +539,7 @@ int RTSP_init(Rtsp_t *r,int fd)
 	r->cast_type = RTSP_UNICAST;
 	r->work_mode = RTSP_MODE_PLAY;
 	r->low_transport = RTSP_TRANSPORT_UDP;
+	r->session_id = rand();
 	RTSP_SOCK_init(fd);
 	
 	return true;
@@ -623,6 +627,34 @@ int RTSP_parse_message(Rtsp_t *r)
 			rtsp_handle_notallowed_method(r);
 			break;
 	}
+	return RTSP_RET_OK;
+}
+
+int RTSP_send_frame(Rtsp_t *r,char *src,int len,uint32_t ts)
+{
+	int i,ret;
+	RtpPacket_t rtpp;
+	
+	struct sockaddr_in addr;
+	memset(&addr, 0, sizeof(struct sockaddr_in));
+	addr.sin_family = AF_INET;
+	addr.sin_port = htons(r->client_port);
+	addr.sin_addr.s_addr = inet_addr("192.168.2.82");
+	if(RTP_packet_h264(src,len,&rtpp,ts,r->session_id)==RTSP_RET_OK){
+		for(i=0;i<rtpp.cnt;i++){
+			if(sendto(r->client_port,
+				rtpp.payload[i],rtpp.payload_size[i],0,
+				(struct sockaddr *)&addr,
+				sizeof(struct sockaddr_in))!= rtpp.payload_size[i]){
+				RTSP_ERR("send frame failed");
+				return RTSP_RET_FAIL;
+			}
+			else{
+				RTSP_DEBUG("send frame ok,size:%d",rtpp.payload_size[i]);
+			}
+		}
+	}
+
 	return RTSP_RET_OK;
 }
 

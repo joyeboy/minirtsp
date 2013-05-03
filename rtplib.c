@@ -26,7 +26,7 @@ int RTP_packet_h264(char *src,int len,RtpPacket_t *p,uint32_t ts,uint32_t ssrc)
 	Nalu_t nalu;
 	FUIndicator_t *fu_indicator;
 	FUHeader_t *fu_header;
-	bool b_fragment = false;
+	int b_fragment = false;
 	RtpHeader_t rtpHeader;
 	if((len-5) > RTP_MTU_SIZE){
 		b_fragment = true;
@@ -70,10 +70,10 @@ int RTP_packet_h264(char *src,int len,RtpPacket_t *p,uint32_t ts,uint32_t ssrc)
 			fu_indicator->type = RTP_FU_A;
 			ptr++;
 			fu_header=(FUHeader_t *)ptr;
-			fu_header.start_bit = (i == 0) ? 1 : 0;
-			fu_header.stop_bit = (i == (p->cnt -1))  ? 1 : 0;
-			fu_header.type = nalu.type;
-			nalu++;
+			fu_header->start_bit = (i == 0) ? 1 : 0;
+			fu_header->stop_bit = (i == (p->cnt -1))  ? 1 : 0;
+			fu_header->type = nalu.type;
+			ptr++;
 			memcpy(ptr,psrc,frag_size);
 			p->payload_size[i]=sizeof(RtpHeader_t) + 1 + 1 + frag_size ;
 			len-=frag_size;
@@ -83,5 +83,6 @@ int RTP_packet_h264(char *src,int len,RtpPacket_t *p,uint32_t ts,uint32_t ssrc)
 
 	return RTSP_RET_OK;
 }
+
 
 

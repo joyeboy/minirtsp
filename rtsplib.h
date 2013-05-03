@@ -77,8 +77,8 @@ typedef struct _Rtsp
 	char stream[32];
 	
 	//transport
-	bool b_interleavedMode;
-	bool low_transport;	// udp or tcp
+	int b_interleavedMode;
+	int low_transport;	// udp or tcp
 	int client_port;
 	int server_port;
 	int channel;

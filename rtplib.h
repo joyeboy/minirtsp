@@ -49,27 +49,35 @@ typedef struct _rtp_header
 }RtpHeader_t;
 
 
-typedef union
+typedef struct _nalu
 {
-	struct{
-		uint8_t type : 5;
-		uint8_t nal_ref_idc : 2;
-		uint8_t forbidden_zero_bit : 1; // must be 0
+	union
+	{
+		struct
+		{
+			uint8_t type : 5;
+			uint8_t nal_ref_idc : 2;
+			uint8_t forbidden_zero_bit : 1; // must be 0
+		};
+		uint8_t padding;
 	};
-	uint8_t padding;
 }Nalu_t;
 
 typedef Nalu_t FUIndicator_t;
 
-typedef union
+typedef struct _fu_header
 {
-	struct{
-	    uint8_t type:5;
-		uint8_t reserved_bit:1;
-		uint8_t start_bit:1;
-		uint8_t stop_bit:1;    
+	union
+	{
+		struct
+		{
+		    uint8_t type:5;
+			uint8_t reserved_bit:1;
+			uint8_t start_bit:1;
+			uint8_t stop_bit:1;    
+		};
+		uint8_t padding;
 	};
-	uint8_t padding;
 }FUHeader_t;
 
 typedef struct _rtppacket
@@ -79,7 +87,7 @@ typedef struct _rtppacket
 	int payload_size[RTP_MAX_FRAGMENTATION];
 }RtpPacket_t;
 
-extern int RTP_packet_h264(char *src,int len,RtpPacket_t *p);
+extern int RTP_packet_h264(char *src,int len,RtpPacket_t *p,uint32_t ts,uint32_t ssrc);
 
 #ifdef __cplusplus
 }

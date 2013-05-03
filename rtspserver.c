@@ -30,6 +30,11 @@ void* rtsp_server_process(void *para)
 	int ret;
 	int *sock=(int *)para;
 	Rtsp_t r;
+	RtpPacket_t rtpp;
+	RtspStream_t *stream=&r.s;
+	uint32_t ts_base;
+	int out_success= false;
+	int bStreamInit=false;
 	fd_set read_set;
 	fd_set write_set;
 	struct timeval timeout={0,10*1000};
@@ -56,7 +61,21 @@ void* rtsp_server_process(void *para)
 				}
 			}
 			if(r.state == RTSP_STATE_PLAYING){
-				
+				out_success = false;
+				if(bStreamInit == false){
+					RTSP_STREAM_init(stream,"720p.264");
+					bStreamInit = true;
+				}
+				if(RTSP_STREAM_next(stream)==RTSP_RET_OK){
+					if(RTSP_send_frame(&r,stream->data,stream->size,stream->timestamp)==RTSP_RET_FAIL)
+						break;
+					else
+						out_success = true;
+				}
+				if(out_success){
+					usleep(stream->inspeed - 12*1000);
+					out_success = false;
+				}
 			}
 		}
 	}
