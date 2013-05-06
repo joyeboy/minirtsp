@@ -11,7 +11,7 @@ extern "C" {
 #define RTP_VERSION				(2)
 #define RTP_MTU_SIZE 			(1460)
 #define RTP_DYNAMIC_TYPE		(96)
-#define RTP_MAX_FRAGMENTATION	(10)
+#define RTP_MAX_FRAGMENTATION	(50)
 
 //#define RTP_SINGLE_UNIT	0-23
 #define RTP_STAP_A	24//单一时间的组合包
@@ -83,7 +83,7 @@ typedef struct _fu_header
 typedef struct _rtppacket
 {
 	int cnt;
-	char payload[RTP_MAX_FRAGMENTATION][RTP_MTU_SIZE];
+	char payload[RTP_MAX_FRAGMENTATION][RTP_MTU_SIZE+16];
 	int payload_size[RTP_MAX_FRAGMENTATION];
 }RtpPacket_t;
 

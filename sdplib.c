@@ -18,6 +18,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 #include "sdplib.h"
 
 static const char * sdpSpecs[SDP_SPEC_CNT]=
@@ -64,7 +65,7 @@ static const char *const sdpAttrs[]=
 	""	
 };
 
-static inline void sdp_add_line(char *key,char *value,char **dest)
+static inline void sdp_add_line(const char *key,char *value,char **dest)
 {
 	sprintf(*dest,"%s%s\r\n",key,value);
 	*dest += strlen(*dest);
@@ -77,7 +78,6 @@ static inline void sdp_add_attr_line(char *name,char *value,char **dest)
 
 static int sdp_add(SessionDesc_t *sdp,int type,char **dest,int ext_arg)
 {
-	int i,n;
 	char tmp[512];
 	switch(type){
 		case SDP_SPEC_VERSION:
@@ -136,19 +136,22 @@ static int sdp_add(SessionDesc_t *sdp,int type,char **dest,int ext_arg)
 			break;
 		default:break;
 	}
+
+	return 0;
 }
 
 
 SessionDesc_t *SDP_new_default(char *session_name,char *ip)
 {
 	SessionDesc_t *sdp=NULL;
+	printf("sdp size:%d \n",sizeof(SessionDesc_t));
 	sdp = (SessionDesc_t *)malloc(sizeof(SessionDesc_t));
+	memset(sdp,0,sizeof(SessionDesc_t));
 	if(sdp == NULL){
-		RTSP_ERR("malloc for sdp failed");
+		RTSP_ERR("malloc for sdp failed,errno:%d",errno);
 		return NULL;
 	}
-	memset(sdp,0,sizeof(SessionDesc_t));
-	sdp->buffer = (char *)malloc(sizeof(SDP_BUFFER_SIZE));
+	sdp->buffer = (char *)calloc(1,SDP_BUFFER_SIZE);
 	if(sdp->buffer == NULL){
 		RTSP_ERR("malloc for sdp buffer failed");
 		free(sdp);
@@ -171,6 +174,7 @@ SessionDesc_t *SDP_new_default(char *session_name,char *ip)
 	sdp->time_active.start = 0;
 	sdp->time_active.end = 0;
 	// session attributions
+	sdp->attr_num = 0;
 	sdp->spec_flag |= ( 1<< SDP_SPEC_ATTRIBUTE);
 	strcpy(sdp->attri[sdp->attr_num].name,sdpAttrs[SDP_ATTR_CONTROL]);
 	sprintf(sdp->attri[sdp->attr_num].value,"*");
@@ -218,7 +222,6 @@ int SDP_setup(SessionDesc_t *sdp)
 {
 	int i,j,n;
 	char *ptr=sdp->buffer;
-	char tmp[512];
 	if(sdp == NULL || ptr == NULL){
 		RTSP_ERR("sdp or buffer is null");
 		return -1;

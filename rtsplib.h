@@ -20,6 +20,7 @@ extern "C" {
 #define RTSP_SERVER_PORT_BEGIN	(7200)
 #define RTSP_CHANNEL_BEGIN		(0)
 
+#define RTSP_SOCK_TIMEOUT	(5)
 #define RTSP_DEFAULT_PORT	(554)
 #define RTSP_VERSION		"RTSP/1.0"
 

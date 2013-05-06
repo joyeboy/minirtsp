@@ -3,6 +3,13 @@
 
 #include "rtspdef.h"
 
+#ifdef NOCROSS
+#define DEFAULT_STREAM		"CIF_12fps_128kbps.h264"
+#else
+#define DEFAULT_STREAM 		"ch0_0.264"
+//#define DEFAULT_STREAM 		"720p.264"
+#endif
+
 #define RTSP_STREAM_TYPE_NOT_SUPPORT		(0)
 #define RTSP_STREAM_TYPE_AUDIO			(8)
 #define RTSP_STREAM_TYPE_VIDEO			(9)// SAME WITH RTSP AUDIO & VIDEO

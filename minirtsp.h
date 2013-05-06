@@ -1,7 +1,7 @@
 #ifndef __RTSPD_H__
 #define __RTSPD_H__
 
-#include "spook/spook.h"
+#include "spook.h"
 
 
 SPOOK_SESSION_PROBE_t MINIRTSP_probe(const void* msg, ssize_t msg_sz);

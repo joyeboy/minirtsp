@@ -10,7 +10,7 @@ LS := @ls
 CP := @cp -Rf
 MV := @mv
 
-TARGET := rtspd
+TARGET := minirtsp 
 OBJ_DIR	= ./tmp
 
 SRC +=
@@ -30,7 +30,7 @@ DEP := $(patsubst %.c,$(OBJ_DIR)/%.d,$(SRC))
 
 INC := -I.
 CFLAGS := -g3 -O0 -Wall -DNOCROSS -DFALSE=0 -DTRUE=1 -DLINUX=2 $(INC)
-LDFLAGS := -L. -lm -lpthread -lflv
+LDFLAGS := -L. -lm -lpthread 
 
 .PHONY: clean all
 

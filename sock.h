@@ -5,14 +5,15 @@
 #include "rtsplog.h"
 #include "rtsplib.h"
 
-#define RTSP_SOCK_TIMEOUT	(5)
-#define RTSP_DEFAULT_PORT	(554)
 
-int RTSP_SOCK_init(int fd);
-int RTSP_SOCK_init2(char *ip,int port);
-int RTSP_SOCK_init3();
-int RTSP_SOCK_read(Rtsp_t *r,char *buf,int size);
-int RTSP_SOCK_write(Rtsp_t *r,char *buf,int size);
+int tcp_server_init(int listen_port);
+int tcp_client_init(int fd);
+int udp_server_init(int port,int timeout);
+int udp_client_init(int timeout);
+int tcp_read(Rtsp_t *r,char *buf,int size);
+int tcp_write(Rtsp_t *r,char *buf,int size);
+int udp_read(Rtsp_t *r,char *buf,int size);
+int udp_write(Rtsp_t *r,char *buf,int size); 
 
 #endif
 

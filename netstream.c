@@ -7,22 +7,28 @@
 #include "rtsplog.h"
 
 #ifdef NOCROSS
-#include "libflv.h"
 
-#define DEFAULT_STREAM		"gostrong.flv"
-
+typedef struct _test_264
+{
+	uint32_t flag;
+	uint32_t size;
+	uint32_t isidr;
+}Test264Frame_t;
+	
 
 int RTSP_STREAM_init(RtspStream_t *s,const char *name) 
 {
-	FlvStream *src;
+	FILE *src;
 	strcpy(s->name,name);
-	s->inspeed=0xffffffff;
+	s->inspeed= 83000;
 	s->timestamp=0;
 	s->data =NULL;
 	s->size = 0;
-    src = FlvStream_open(DEFAULT_STREAM);
-    if (src == NULL)
+	src = fopen(name,"r");
+    if (src == NULL){
+		RTSP_ERR("init stream %s failed.",name);
         return RTSP_RET_FAIL;
+    }
 	s->param = (void *) src;
 	RTSP_INFO("rtmp stream(%s) init success.",name);
 	return RTSP_RET_OK;
@@ -30,41 +36,48 @@ int RTSP_STREAM_init(RtspStream_t *s,const char *name)
 
 int RTSP_STREAM_next(RtspStream_t *s) 
 {	
-	FlvStream *src = (FlvStream *)s->param;
-	struct flv_tag tag;
-    int ret=FlvStream_readNextTag(src, &tag);
-    if (ret != 0) {
+	static uint32_t base_ts=0;
+	FILE *src = (FILE *)s->param;
+	char *buffer=NULL;
+	Test264Frame_t frame;
+    int ret=fread(&frame,sizeof(Test264Frame_t),1,src);
+    if (ret <= 0) {
         return RTSP_RET_FAIL;
     } else {
     	if(s->data == NULL){
-			char *buffer = malloc(128*1024);
+			buffer = malloc(128*1024);
 			if(buffer == NULL){
 				printf("malloc for stream buffer failed\n");
 				return RTSP_RET_FAIL;
 			}
 			s->data = buffer;
     	}
-        memcpy(s->data,tag.data,tag.dataSize);
+		ret=fread(s->data,frame.size,1,src);
+		if(ret <= 0)
+			return RTSP_RET_FAIL;
     }
-    s->size=tag.dataSize;
-    s->timestamp=tag.timestamp;
-	s->type = tag.type;
+    s->size=frame.size;
+    s->timestamp=base_ts;
+	s->type = RTSP_STREAM_TYPE_VIDEO;
+	s->isKeyFrame=frame.isidr;
+	
+	base_ts +=83;
     return RTSP_RET_OK;
 }
 
 int RTSP_STREAM_destroy(RtspStream_t *s) 
 {
 	if(s->data) free(s->data);
-	FlvStream *src = (FlvStream *)s->param;
-    FlvStream_free(src);
+	FILE *src = (FILE *)s->param;
+    fclose(src);
 	return RTSP_RET_OK;
 }
 
 int RTSP_STREAM_reset(RtspStream_t *s) 
 {
-	FlvStream *src = (FlvStream *)s->param;
-    FlvStream_free(src);
-    s->param= (void *)FlvStream_open(DEFAULT_STREAM);
+	FILE *src = (FILE *)s->param;
+    fclose(src);
+    s->param= (void *)fopen(s->name,"r");
     if (s->param == NULL)
         return RTSP_RET_FAIL;
 	return RTSP_RET_OK;
@@ -74,7 +87,6 @@ int RTSP_STREAM_reset(RtspStream_t *s)
 #include "sdk/sdk_api.h"
 #include "mediabuf.h"
 
-#define DEFAULT_STREAM "ch0_0.264"
 
 int RTSP_STREAM_init(RtspStream_t *s,const char *name) 
 {
@@ -118,18 +130,18 @@ int RTSP_STREAM_next(RtspStream_t *s)
     }
 	
     if (0 == MEDIABUF_out_lock(user)) {
-		SDK_AVENC_BUF_ATTR_t* enc_attr = NULL;
+		SDK_ENC_BUF_ATTR_t* enc_attr = NULL;
 		ssize_t enc_size;
         if (0 == MEDIABUF_out(user,(void **)&enc_attr, NULL, &enc_size)) {
 			out_success = true;
 			s->size = enc_attr->data_sz;
-			s->timestamp = enc_attr->pts_sys/ 1000;
+			s->timestamp = enc_attr->timestamp_us/ 1000;
 			s->data = (void*)(enc_attr + 1);
 			s->isKeyFrame = 0;
-			if(AVENC_BUF_DATA_H264 == enc_attr->type && enc_attr->h264.ref_counter % 2 == 0){
+			if(SDK_ENC_BUF_DATA_H264 == enc_attr->type && enc_attr->h264.ref_counter % 2 == 0){
 				s->isKeyFrame = enc_attr->h264.keyframe;
 				s->type =  RTSP_STREAM_TYPE_VIDEO;
-			}else if(AVENC_BUF_DATA_G711A == enc_attr->type){
+			}else if(SDK_ENC_BUF_DATA_G711A == enc_attr->type){
 				s->type = RTSP_STREAM_TYPE_AUDIO;
 			}else{
 				s->type = RTSP_STREAM_TYPE_NOT_SUPPORT;

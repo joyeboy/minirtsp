@@ -139,7 +139,7 @@ typedef struct _media_desc
 	Attribute_t attri[SDP_MAX_ATTR_NUM];
 }MediaDesc_t;
 
-typedef struct
+typedef struct _session_desc
 {	
 	char *buffer;
 	uint32_t spec_flag;
@@ -176,9 +176,8 @@ typedef struct
 	char zone[32];
 	// k=*
 	struct{
-		char method;
+		char key[128];
 	}encrypt_key;
-	char encrpt_key[128];
 	// a=*
 	int attr_num;
 	Attribute_t attri[SDP_MAX_ATTR_NUM];

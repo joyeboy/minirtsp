@@ -10,6 +10,7 @@
 #include "rtspdef.h"
 #include "rtsplog.h"
 #include "rtsplib.h"
+#include "sock.h"
 
 
 static int server_fd=-1;
@@ -60,26 +61,28 @@ void* rtsp_server_process(void *para)
 					break;
 				}
 			}
-			if(r.state == RTSP_STATE_PLAYING){
+
+		}// end select
+		if(r.state == RTSP_STATE_PLAYING){
+			out_success = false;
+			if(bStreamInit == false){
+				if(RTSP_STREAM_init(stream,DEFAULT_STREAM)<0)
+					break;
+				bStreamInit = true;
+			}
+			if(RTSP_STREAM_next(stream)==RTSP_RET_OK){
+				if(RTSP_send_frame(&r,stream->data,stream->size,stream->timestamp)==RTSP_RET_FAIL)
+					break;
+				else
+					out_success = true;
+			}
+			if(out_success){
+				usleep(stream->inspeed - 10*1000);
 				out_success = false;
-				if(bStreamInit == false){
-					RTSP_STREAM_init(stream,"720p.264");
-					bStreamInit = true;
-				}
-				if(RTSP_STREAM_next(stream)==RTSP_RET_OK){
-					if(RTSP_send_frame(&r,stream->data,stream->size,stream->timestamp)==RTSP_RET_FAIL)
-						break;
-					else
-						out_success = true;
-				}
-				if(out_success){
-					usleep(stream->inspeed - 12*1000);
-					out_success = false;
-				}
 			}
 		}
-	}
-
+	}// end of while
+	
 	RTSP_destroy(&r);
 	
 	return NULL;
@@ -89,7 +92,7 @@ void* rtsp_server_process(void *para)
 int rtsp_server_main(int argc,char *argv[]) {
     int client_fd;
     signal(SIGINT,signal_handle);
-    server_fd=RTSP_SOCK_init3();
+    server_fd=tcp_server_init(RTSP_DEFAULT_PORT);
     do {
         struct sockaddr client;
         socklen_t size=sizeof(struct sockaddr);

@@ -17,6 +17,7 @@
 ******************************************************************************/
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <string.h>
 #include <time.h>
 #include <sys/socket.h>
@@ -24,6 +25,7 @@
 //#include <netinet/tcp.h>
 //#include <netinet/in.h>
 #include "rtsplib.h"
+#include "sock.h"
 
 
 typedef struct AVal {
@@ -151,7 +153,7 @@ static RStatusCode_t rtspRStatusCodes[]=
 };
 
 
-static const char (*rtspMethods[16])[RTSP_METHOD_CNT]=
+static const char  *rtspMethods[RTSP_METHOD_CNT]=
 {
 	"DESCRIBE",
 	"ANNOUNCE",
@@ -164,7 +166,7 @@ static const char (*rtspMethods[16])[RTSP_METHOD_CNT]=
 	"SETUP",
 	"SET_PARAMETER",
 	"TEARDOWN",
-	""
+	//""
 };
 static const char *rtspAllowMethods="SETUP,OPTIONS,DESCRIBE,PLAY,TEARDOWN";
 
@@ -256,51 +258,57 @@ static int rtsp_parse_transport(Rtsp_t *r,char *buf)
 	}else{
 		if((q=strstr(p,"client_port"))!=NULL){
 			q+=strlen("client_port=");
+			printf("q:%s\n",q);
 			sscanf(q,"%d%*s",&r->client_port);
 		}
-		if((q=strstr(p,"multicast"))!=NULL){
-			q+=strlen("server_port");
+		if((q=strstr(p,"server_port"))!=NULL){
+			q+=strlen("server_port=");
 			sscanf(q,"%d%*s",&r->server_port);
 		}
 		q=buf+strlen(buf);
-		sprintf(q,"client_port=%d-%d;server_port=%d-%d;",
+		sprintf(q,"client_port=%d-%d;server_port=%d-%d",
 			r->client_port,r->client_port+ 1,r->server_port,r->server_port+1);
 	}
 	if((q=strstr(p,"mode"))!=NULL){
 		q+=strlen("mode=\"");
 		if(strcmp(q,"PLAY") == 0){
 			r->work_mode =RTSP_MODE_PLAY;
-			strcat(buf,"mode=\"PLAY\"");
+			strcat(buf,";mode=\"PLAY\"");
 		}else if(strcmp(q,"RECORD") == 0){
 			r->work_mode = RTSP_MODE_RECORD;
-			strcat(buf,"mode=\"RECORD\"");
+			strcat(buf,";mode=\"RECORD\"");
 		}
 	}
 	//ssrc
 	// ttl
 	//....
+	RTSP_DEBUG("parse transport:client_port:%d server_port:%d,%s",
+	r->client_port,r->server_port,r->cast_type ? "multicast" : "unicast");
 	RTSP_DEBUG("Transport: %s",buf);
 	return RTSP_RET_OK;
 }
 
-static void rtsp_gmt_time_string(char *ret)
+static void rtsp_gmt_time_string(char *ret,int size)
 {
-	const char * const szMonth[12]={"Jan","Feb","Mar","Apr","May","Jun","Jul",
-		"Aug","Sep","Oct","Nov","Dec"};
+	//const char * const szMonth[12]={"Jan","Feb","Mar","Apr","May","Jun","Jul",
+	//	"Aug","Sep","Oct","Nov","Dec"};
 	time_t t;
 	struct tm *ptm;
 	time(&t);
-	ptm=gmtime(&t);
-	sprintf(ret,"%2d %s %04d %02d:%02d:%02d GMT",ptm->tm_mday,szMonth[ptm->tm_mon],
-		ptm->tm_year+1900,ptm->tm_hour,ptm->tm_min,ptm->tm_mday);
+	//ptm=gmtime(&t);
+	//sprintf(ret,"%2d %s %04d %02d:%02d:%02d GMT",ptm->tm_mday,szMonth[ptm->tm_mon],
+	//	ptm->tm_year+1900,ptm->tm_hour,ptm->tm_min,ptm->tm_mday);
+	strftime(ret, size, "%a, %b %d %Y %H:%M:%S GMT", gmtime(&t));
 }
 
 static int rtsp_send_packet(Rtsp_t *r)
 {
 	int ret=send(r->sock,r->payload,r->payload_size,0);
 	if(ret != r->payload_size){
+		RTSP_ERR("rtsp send packet(size:%d) failed.",r->payload_size);
 		return RTSP_RET_FAIL;
 	}
+	RTSP_DEBUG("rtsp send packet(size:%d) ok",r->payload_size);
 	return RTSP_RET_OK;
 }
 
@@ -324,10 +332,12 @@ static int rtsp_handle_describe(Rtsp_t *r)
 		// send error ack here...
 		return RTSP_RET_FAIL;
 	}
-	if((r->sdp=SDP_new_default(r->stream,r->ip_me))==NULL){
-		return RTSP_RET_FAIL;
+	if(r->sdp == NULL){
+		if((r->sdp=SDP_new_default(r->stream,r->ip_me))==NULL){
+			return RTSP_RET_FAIL;
+		}
+		SDP_add_h264(r->sdp,SDP_DEFAULT_VIDEO_CONTROL);
 	}
-	SDP_add_h264(r->sdp,SDP_DEFAULT_VIDEO_CONTROL);
 	SDP_setup(r->sdp);
 	sprintf(r->payload,format,RTSP_VERSION,
 		rtspRStatusCodes[RTSP_RSC_OK].code,
@@ -379,7 +389,7 @@ static int rtsp_handle_play(Rtsp_t *r)
 		"CSeq: %d\r\n"\
 		"Date: %s\r\n"
 		"\r\n";
-	rtsp_gmt_time_string(tmp);
+	rtsp_gmt_time_string(tmp,sizeof(tmp));
 	sprintf(r->payload,format,RTSP_VERSION,
 		rtspRStatusCodes[RTSP_RSC_OK].code,
 		rtspRStatusCodes[RTSP_RSC_OK].info,
@@ -409,7 +419,7 @@ static int rtsp_handle_redirect(Rtsp_t *r)
 static int rtsp_handle_setup(Rtsp_t *r)
 {
 	int ret;
-	char tmp[128];
+	char tmp[256];
 	const char *format=
 		"%s %d %s\r\n"\
 		"CSeq: %d\r\n"\
@@ -539,13 +549,14 @@ int RTSP_init(Rtsp_t *r,int fd)
 	r->cast_type = RTSP_UNICAST;
 	r->work_mode = RTSP_MODE_PLAY;
 	r->low_transport = RTSP_TRANSPORT_UDP;
-	r->session_id = rand();
-	RTSP_SOCK_init(fd);
+	r->session_id = 12345678;//rand();
+	tcp_client_init(fd);
 	
 	return true;
 }
 int RTSP_destroy(Rtsp_t *r)
 {
+	RTSP_INFO("rtsp destroy.");
 	close(r->sock);
 	r->sock = -1;
 	r->state = RTSP_STATE_INIT;
@@ -558,7 +569,7 @@ int RTSP_destroy(Rtsp_t *r)
 
 int RTSP_read_message(Rtsp_t *r)
 {
-	int ret=read(r->sock,r->payload,RTSP_BUF_SIZE,0);
+	int ret=recv(r->sock,r->payload,RTSP_BUF_SIZE,0);
 	if(ret < 0){
 		RTSP_ERR("read message failed");
 		return RTSP_RET_FAIL;
@@ -588,73 +599,79 @@ int RTSP_parse_message(Rtsp_t *r)
 	RTSP_DEBUG("rtsp request %d <<%s>> cseq:%d",i,rtspMethods[i],r->cseq);
 	switch(i){
 		case RTSP_METHOD_DESCRIBE:
-			rtsp_handle_describe(r);
+			ret=rtsp_handle_describe(r);
 			break;
 		//case RTSP_METHOD_ANNOUNCE:
-		//	rtsp_handle_announce(r);
+		//	ret=rtsp_handle_announce(r);
 		//	break;
 		//case RTSP_METHOD_GET_PARAMETER:
-		//	rtsp_handle_get_parameter(r);
+		//	ret=rtsp_handle_get_parameter(r);
 		//	break;
 		case RTSP_METHOD_OPTIONS:
-			rtsp_handle_options(r);
+			ret=rtsp_handle_options(r);
 			break;
 		//case RTSP_METHOD_PAUSE:
-		//	rtsp_handle_pause(r);
+		//	ret=rtsp_handle_pause(r);
 		//	break;
 		case RTSP_METHOD_PLAY:
-			rtsp_handle_play(r);
+			ret=rtsp_handle_play(r);
 			r->state = RTSP_STATE_PLAYING;
 			break;
 		//case RTSP_METHOD_RECORD:
-		//	rtsp_handle_record(r);
+		//	ret=rtsp_handle_record(r);
 		//	break;
 		//case RTSP_METHOD_REDIRECT:
-		//	rtsp_handle_redirect(r);
+		//	ret=rtsp_handle_redirect(r);
 		//	break;
 		case RTSP_METHOD_SETUP:
-			rtsp_handle_setup(r);
+			ret=rtsp_handle_setup(r);
 			r->state = RTSP_STATE_READY;
 			break;
 		//case RTSP_METHOD_SET_PARAMETER:
 		//	rtsp_handle_set_parameter(r);
 		//	break;
 		case RTSP_METHOD_TEARDOWN:
-			rtsp_handle_teardown(r);
+			ret=rtsp_handle_teardown(r);
 			r->state = RTSP_STATE_INIT;
 			break;
 		default:
-			rtsp_handle_notallowed_method(r);
+			ret=rtsp_handle_notallowed_method(r);
 			break;
 	}
-	return RTSP_RET_OK;
+	return ret;
 }
 
 int RTSP_send_frame(Rtsp_t *r,char *src,int len,uint32_t ts)
 {
-	int i,ret;
+	int i;
 	RtpPacket_t rtpp;
-	
+	int sock = -1; 
 	struct sockaddr_in addr;
+
+	sock =udp_server_init(r->server_port,RTSP_SOCK_TIMEOUT);
+	//sock = udp_client_init(RTSP_SOCK_TIMEOUT);
+	if(sock < 0)
+		return RTSP_RET_FAIL;
 	memset(&addr, 0, sizeof(struct sockaddr_in));
 	addr.sin_family = AF_INET;
 	addr.sin_port = htons(r->client_port);
 	addr.sin_addr.s_addr = inet_addr("192.168.2.82");
 	if(RTP_packet_h264(src,len,&rtpp,ts,r->session_id)==RTSP_RET_OK){
 		for(i=0;i<rtpp.cnt;i++){
-			if(sendto(r->client_port,
+			if(sendto(sock,
 				rtpp.payload[i],rtpp.payload_size[i],0,
 				(struct sockaddr *)&addr,
 				sizeof(struct sockaddr_in))!= rtpp.payload_size[i]){
-				RTSP_ERR("send frame failed");
+				RTSP_ERR("send to(%#10x:%d) frame failed,sock:%d",
+					addr.sin_addr.s_addr,r->client_port,sock);
 				return RTSP_RET_FAIL;
 			}
 			else{
-				RTSP_DEBUG("send frame ok,size:%d",rtpp.payload_size[i]);
+				RTSP_DEBUG("%d: send frame ok,size:%d",i,rtpp.payload_size[i]);
 			}
 		}
 	}
-
+	RTSP_DEBUG("rtsp send frame done");
 	return RTSP_RET_OK;
 }
 

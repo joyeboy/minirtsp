@@ -15,23 +15,28 @@
     	Author      : kejiazhw@gmail.com(kaga)
  	Modification: Created file	
 ******************************************************************************/
-
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include "rtplib.h"
+#include "rtsplog.h"
 
 int RTP_packet_h264(char *src,int len,RtpPacket_t *p,uint32_t ts,uint32_t ssrc)
 {
+#define H264_NALU_OFFSET		(4)	/*start code */
+#define H264_NALU_DATA_OFFSET	(5)	/*start code & nalu header*/
 	static int cseq=0;
-	char *nalu_header=src+4,*ptr,*psrc;
+	char *ptr=NULL,*psrc=NULL;
 	int frag_size;
 	Nalu_t nalu;
 	FUIndicator_t *fu_indicator;
 	FUHeader_t *fu_header;
 	int b_fragment = false;
 	RtpHeader_t rtpHeader;
-	if((len-5) > RTP_MTU_SIZE){
+	if((len-H264_NALU_DATA_OFFSET) > RTP_MTU_SIZE){
 		b_fragment = true;
 	}
-	
+	RTSP_DEBUG("rtp start,src:%p len:%d end:%p",src,len,src+len);
 	rtpHeader.version = RTP_VERSION;
 	rtpHeader.padding = false;
 	rtpHeader.extension = false;
@@ -43,18 +48,18 @@ int RTP_packet_h264(char *src,int len,RtpPacket_t *p,uint32_t ts,uint32_t ssrc)
 	rtpHeader.ssrc = ssrc;
 
 	if(b_fragment == false){
-		p->cnt = 0;
+		p->cnt = 1;
 		ptr=p->payload[0];
 		rtpHeader.marker = true;
 		memcpy(ptr,&rtpHeader,sizeof(RtpHeader_t));
 		ptr+=sizeof(RtpHeader_t);
-		memcpy(ptr,src+4,len-4);
-		p->payload_size[0]=sizeof(RtpHeader_t) + len -4;
+		memcpy(ptr,src+H264_NALU_OFFSET,len-H264_NALU_OFFSET);
+		p->payload_size[0]=sizeof(RtpHeader_t) + len -H264_NALU_OFFSET;
 	}else{
 		int i=0;
 		len -=5;
 		p->cnt = (len+RTP_MTU_SIZE - 1)/RTP_MTU_SIZE;
-		psrc = src + 5;
+		psrc = src + H264_NALU_DATA_OFFSET;
 		for(i=0;i<p->cnt;i++){
 			ptr = p->payload[i];
 			if(len > RTP_MTU_SIZE)
@@ -74,13 +79,14 @@ int RTP_packet_h264(char *src,int len,RtpPacket_t *p,uint32_t ts,uint32_t ssrc)
 			fu_header->stop_bit = (i == (p->cnt -1))  ? 1 : 0;
 			fu_header->type = nalu.type;
 			ptr++;
+			printf("ptr:%p psrc:%p size:%d\n",ptr,psrc,frag_size);
 			memcpy(ptr,psrc,frag_size);
 			p->payload_size[i]=sizeof(RtpHeader_t) + 1 + 1 + frag_size ;
 			len-=frag_size;
 			psrc +=frag_size;
 		}
 	}
-
+	RTSP_DEBUG("rtp packet done,cnt:%d",p->cnt);
 	return RTSP_RET_OK;
 }
 
